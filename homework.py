@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 import time
 import requests
-from exceptions import NotResponseFromApi, ApiNotCorrect
+from exceptions import NotFoundTokens
 import telegram
 import logging
 load_dotenv()
@@ -36,18 +36,24 @@ handler.setLevel(logging.DEBUG)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+previos_message = ''
+
 
 def send_message(bot, message):
-    """Отправка сообщения в Телеграм"""
+    """Отправка сообщения в Телеграм."""
+    global previos_message
     try:
-        bot.send_message(TELEGRAM_CHAT_ID, message)
-        logger.info('Сообщение отправлено в Телеграм')
+        if message != previos_message:
+            bot.send_message(TELEGRAM_CHAT_ID, message)
+            logger.info('Сообщение отправлено в Телеграм')
+            previos_message = message
     except Exception as error:
         logger.error(f'Ошибка при отправке сообщения в Телеграм: {error}')
 
 
 def get_api_answer(current_timestamp):
-    """Отправляю запрос API"""
+    """Отправляю запрос API."""
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     try:
         timestamp = current_timestamp
         params = {'from_date': timestamp}
@@ -56,38 +62,44 @@ def get_api_answer(current_timestamp):
         response = response.json()
         return response
     except Exception as error:
-        logger.error(f'Ошибка при запросе к основному API: {error}')
+        message = f'Ошибка при запросе к основному API: {error}'
+        logger.error(message)
+        send_message(bot, message)
 
 
 def check_response(response):
-    """Проверяет ответ API на корректность"""
+    """Проверяет ответ API на корректность."""
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     try:
         homeworks = response['homeworks']
         logger.debug('Ответ от сервера корректен')
         return homeworks
     except Exception as error:
-        logger.error(f'Ответ сервера не корректен: {error}')
+        message = f'Ответ сервера не корректен: {error}'
+        logger.error(message)
+        send_message(bot, message)
 
 
 def parse_status(homework):
-    """Извлекает из информации о домашней работе статус этой работы"""
+    """Извлекает из информации о домашней работе статус этой работы."""
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     homework_status = homework.get('status')
     if homework_status not in HOMEWORK_STATUSES:
-        logger.error(
-            f'Получен не корректный статус работы: {homework_status}'
-        )
+        message = f'Получен не корректный статус работы: {homework_status}'
+        logger.error(message)
+        send_message(bot, message)
     homework_name = homework.get('homework_name')
     verdict = HOMEWORK_STATUSES.get(homework_status)
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
-    """Проверяю токены на доступность"""
+    """Проверяю токены на доступность."""
     if (
         TELEGRAM_CHAT_ID is None or TELEGRAM_TOKEN
         is None or PRACTICUM_TOKEN is None
     ):
-        logger.critical('Недоступна одна из переменных окружения')
+        logger.critical('Недоступна как минимум одна из переменных окружения')
         return False
     else:
         logger.debug('Переменные окружения доступны')
@@ -96,13 +108,17 @@ def check_tokens():
 
 def main():
     """Основная логика работы бота."""
+    if not check_tokens():
+        raise NotFoundTokens(
+            'Завершение работы бота из-за отсутствия переменных окружения'
+        )
+
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
     homework = check_response(get_api_answer(
         current_timestamp - ONE_MONTH_IN_SEC
     ))
-    previos_message = ''
-    while check_tokens():
+    while True:
         try:
             if homework != check_response(
                 get_api_answer(current_timestamp - ONE_MONTH_IN_SEC)
@@ -117,9 +133,7 @@ def main():
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
-            if message != previos_message:
-                send_message(bot, message)
-                previos_message = message
+            send_message(bot, message)
             time.sleep(RETRY_TIME)
 
 

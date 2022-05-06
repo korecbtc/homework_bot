@@ -1,10 +1,4 @@
-class NotResponseFromApi(Exception):
-    pass
-
-
 class NotFoundTokens(Exception):
-    pass
+    """Исключение для переменных окружения."""
 
-
-class ApiNotCorrect(Exception):
     pass

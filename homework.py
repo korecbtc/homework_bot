@@ -1,10 +1,13 @@
-import os
-from dotenv import load_dotenv
-import time
-import requests
-from exceptions import NotFoundTokens
-import telegram
 import logging
+import os
+import time
+
+import requests
+import telegram
+from dotenv import load_dotenv
+
+from exceptions import ApiAnswerError, NotFoundTokens, WrongHomeworkStatus
+
 load_dotenv()
 
 
@@ -54,40 +57,56 @@ def send_message(bot, message):
 def get_api_answer(current_timestamp):
     """Отправляю запрос API."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    try:
-        timestamp = current_timestamp
-        params = {'from_date': timestamp}
-        response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-        logger.debug('Получен ответ от сервера')
-        response = response.json()
-        return response
-    except Exception as error:
-        message = f'Ошибка при запросе к основному API: {error}'
+    timestamp = current_timestamp
+    params = {'from_date': timestamp}
+    response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    if response.status_code != 200:
+        message = 'Ошибка при запросе к основному API.'
         logger.error(message)
         send_message(bot, message)
+        raise ApiAnswerError(message)
+    logger.debug('Получен ответ от сервера')
+    response = response.json()
+    return response
 
 
 def check_response(response):
     """Проверяет ответ API на корректность."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    try:
-        homeworks = response['homeworks']
-        logger.debug('Ответ от сервера корректен')
-        return homeworks
-    except Exception as error:
-        message = f'Ответ сервера не корректен: {error}'
+    if type(response) is not dict:
+        message = 'Ответ сервера имеет не верный тип данных.'
         logger.error(message)
         send_message(bot, message)
+        raise TypeError(message)
+    if 'homeworks' not in response:
+        message = 'В ответе сервера отсутствуют необходимые ключи.'
+        logger.error(message)
+        send_message(bot, message)
+        raise KeyError(message)
+    homeworks = response['homeworks']
+    if type(homeworks) is not list:
+        message = 'В ответе сервера имеется не верный тип данных.'
+        logger.error(message)
+        send_message(bot, message)
+        raise TypeError(message)
+    logger.debug('Ответ от сервера корректен')
+    return homeworks
 
 
 def parse_status(homework):
     """Извлекает из информации о домашней работе статус этой работы."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    homework_status = homework.get('status')
-    if homework_status not in HOMEWORK_STATUSES:
-        message = f'Получен не корректный статус работы: {homework_status}'
+    if 'homework_name' not in homework:
+        message = 'В ответе сервера отсутствуют необходимые ключи'
         logger.error(message)
         send_message(bot, message)
+        raise KeyError(message)
+    homework_status = homework.get('status')
+    if homework_status not in HOMEWORK_STATUSES:
+        message = 'Получен не корректный статус работы'
+        logger.error(message)
+        send_message(bot, message)
+        raise WrongHomeworkStatus(message)
     homework_name = homework.get('homework_name')
     verdict = HOMEWORK_STATUSES.get(homework_status)
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'

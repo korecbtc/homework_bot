@@ -119,8 +119,8 @@ def log_and_send(bot, error):
     send_message(bot, message)
 
 
-def main():
-    """Основная логика работы бота."""
+def do_homework():
+    """Вспомогательная функция, иначе main is too complex (C901)."""
     if not check_tokens():
         logger.critical('Недоступна как минимум одна из переменных окружения')
         sys.exit(1)
@@ -141,7 +141,12 @@ def main():
         log_and_send(bot, error)
     except Exception as error:
         log_and_send(bot, error)
+    finally:
+        return bot, current_timestamp, homework
 
+
+def main(bot, current_timestamp, homework):
+    """Основная логика работы бота."""
     while True:
         try:
             if homework != check_response(

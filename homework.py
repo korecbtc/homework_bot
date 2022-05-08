@@ -17,7 +17,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 6
+RETRY_TIME = 600
 ONE_MONTH_IN_SEC = 3600 * 24 * 30
 LAST_HOMEWORK = 0
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -141,12 +141,13 @@ def do_homework():
         log_and_send(bot, error)
     except Exception as error:
         log_and_send(bot, error)
-    finally:
-        return bot, current_timestamp, homework
+    return homework
 
 
-def main(bot, current_timestamp, homework):
+def main(homework):
     """Основная логика работы бота."""
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    current_timestamp = int(time.time())
     while True:
         try:
             if homework != check_response(
@@ -175,4 +176,4 @@ def main(bot, current_timestamp, homework):
 
 
 if __name__ == '__main__':
-    main()
+    main(do_homework())

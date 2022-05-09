@@ -17,7 +17,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 600
+RETRY_TIME = 6
 ONE_MONTH_IN_SEC = 3600 * 24 * 30
 LAST_HOMEWORK = 0
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -41,23 +41,8 @@ handler = logging.StreamHandler()
 handler.setLevel(logging.DEBUG)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-previos_message = ''
 
 
-def check_doubles(func):
-    """Декоратор для отсеченеия повторных сообщений."""
-    def wr(bot, message):
-        # Сергей, подскажи, пожалуйста, как обойтись без глобальной переменной?
-        # И почему их лучше не использовать?
-        global previos_message
-        if message != previos_message:
-            func(bot, message)
-            previos_message = message
-            return previos_message
-    return wr
-
-
-@check_doubles
 def send_message(bot, message):
     """Отправка сообщения в Телеграм."""
     try:
@@ -74,7 +59,15 @@ def get_api_answer(current_timestamp):
     """Отправляю запрос API."""
     timestamp = current_timestamp
     params = {'from_date': timestamp}
-    response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    PARAMS_FOR_REQUEST = {
+        'url': ENDPOINT,
+        'headers': HEADERS,
+        'params': params
+    }
+    try:
+        response = requests.get(**PARAMS_FOR_REQUEST)
+    except Exception as error:
+        raise ApiAnswerError(f'Ошибка при запросе к основному API: {error}')
     if response.status_code != HTTPStatus.OK:
         raise ApiAnswerError('Ошибка при запросе к основному API.')
     logger.debug('Получен ответ от сервера')
@@ -89,7 +82,7 @@ def check_response(response):
     if ('homeworks' or 'current_date') not in response:
         raise KeyError('В ответе сервера отсутствуют необходимые ключи.')
     homeworks = response['homeworks']
-    if type(homeworks) is not list:
+    if not isinstance(homeworks, list):
         raise TypeError('В ответе сервера имеется не верный тип данных.')
     logger.debug('Ответ от сервера корректен')
     return homeworks
@@ -112,15 +105,26 @@ def check_tokens():
     return all([TELEGRAM_CHAT_ID, TELEGRAM_TOKEN, PRACTICUM_TOKEN])
 
 
-def log_and_send(bot, error):
-    """Логирую и отправляю сообщение."""
+def log_and_send(bot, error, previos_message):
+    """Логирую и отправляю сообщение, если оно уникально."""
     message = f'Сбой в работе программы: {error}'
     logger.error(message)
-    send_message(bot, message)
+    if message != previos_message:
+        send_message(bot, message)
+        previos_message = message
+    return previos_message
+
+# Да, следующая функция лишняя, но иначе flake выдает ошибку
+# "main is too complex (C901)"
+# И работа не проходит проверку Яндекса.
+# Поэтому, разбил на 2 функции
+# С этой же целью сделал отдельную функцию для отправки
+# сообщений и проверки дублей.
 
 
 def do_homework():
     """Вспомогательная функция, иначе main is too complex (C901)."""
+    previos_message = ''
     if not check_tokens():
         logger.critical('Недоступна как минимум одна из переменных окружения')
         sys.exit(1)
@@ -132,15 +136,15 @@ def do_homework():
             current_timestamp - ONE_MONTH_IN_SEC
         ))
     except ApiAnswerError as error:
-        log_and_send(bot, error)
+        log_and_send(bot, error, previos_message)
     except TypeError as error:
-        log_and_send(bot, error)
+        log_and_send(bot, error, previos_message)
     except KeyError as error:
-        log_and_send(bot, error)
+        log_and_send(bot, error, previos_message)
     except WrongHomeworkStatus as error:
-        log_and_send(bot, error)
+        log_and_send(bot, error, previos_message)
     except Exception as error:
-        log_and_send(bot, error)
+        log_and_send(bot, error, previos_message)
     return homework
 
 
@@ -148,6 +152,7 @@ def main(homework):
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
+    previos_message = ''
     while True:
         try:
             if homework != check_response(
@@ -162,15 +167,15 @@ def main(homework):
         except MessageNotSent as error:
             logger.error(error)
         except ApiAnswerError as error:
-            log_and_send(bot, error)
+            previos_message = log_and_send(bot, error, previos_message)
         except TypeError as error:
-            log_and_send(bot, error)
+            previos_message = log_and_send(bot, error, previos_message)
         except KeyError as error:
-            log_and_send(bot, error)
+            previos_message = log_and_send(bot, error, previos_message)
         except WrongHomeworkStatus as error:
-            log_and_send(bot, error)
+            previos_message = log_and_send(bot, error, previos_message)
         except Exception as error:
-            log_and_send(bot, error)
+            previos_message = log_and_send(bot, error, previos_message)
         finally:
             time.sleep(RETRY_TIME)
 

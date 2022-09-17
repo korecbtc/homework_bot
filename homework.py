@@ -114,13 +114,6 @@ def log_and_send(bot, error, previos_message):
         previos_message = message
     return previos_message
 
-# Да, следующая функция лишняя, но иначе flake выдает ошибку
-# "main is too complex (C901)"
-# И работа не проходит проверку Яндекса.
-# Поэтому, разбил на 2 функции
-# С этой же целью сделал отдельную функцию для отправки
-# сообщений и проверки дублей.
-
 
 def do_homework():
     """Вспомогательная функция, иначе main is too complex (C901)."""
